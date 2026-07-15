@@ -303,9 +303,30 @@ Future<void> _loadAllData() async {
       margin: const EdgeInsets.only(right: 15),
       child: Column(
         children: [
-          CircleAvatar(backgroundColor: Colors.orange.withOpacity(0.1), child: const Icon(Icons.fastfood, color: Colors.orange)),
+          // ⭐️ ปรับจาก CircleAvatar ที่มีไอคอน เป็นการใช้ ClipRRect แสดงรูปภาพ
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: CachedNetworkImage(
+              imageUrl: item['ing_image'] ?? '',
+              width: 50,
+              height: 50,
+              fit: BoxFit.cover,
+              errorWidget: (context, url, error) => Container(
+                width: 50,
+                height: 50,
+                color: Colors.grey[200],
+                child: const Icon(Icons.fastfood, color: Colors.orange, size: 25),
+              ),
+            ),
+          ),
           const SizedBox(height: 5),
-          Text(item['ing_name'] ?? "", style: GoogleFonts.prompt(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+          // ชื่อวัตถุดิบ
+          Text(
+            item['ing_name'] ?? "",
+            style: GoogleFonts.prompt(fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
