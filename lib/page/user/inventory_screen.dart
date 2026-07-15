@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/page/detail/ingredient_detail_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -85,7 +86,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
       if (response.statusCode == 200) {
         setState(() => myIngredients.removeAt(index));
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ลบวัตถุดิบเรียบร้อยแล้ว')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ลบวัตถุดิบเรียบร้อยแล้ว')));
       }
     } catch (e) {
       debugPrint("❌ Error deleting: $e");
@@ -93,7 +96,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   // ฟังก์ชันใหม่: ใช้สลับสถานะ มี (1) / หมด (0)
-  Future<void> _toggleIngredient(int index, int ingId, int currentStatus) async {
+  Future<void> _toggleIngredient(
+    int index,
+    int ingId,
+    int currentStatus,
+  ) async {
     try {
       final String? uidStr = await AuthService.getUid();
       final String? token = await AuthService.getToken();
@@ -108,7 +115,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
           "Content-Type": "application/json",
           "Authorization": "Bearer $token",
         },
-        body: jsonEncode({"uid": int.parse(uidStr!), "ing_id": ingId, "status": newStatus}),
+        body: jsonEncode({
+          "uid": int.parse(uidStr!),
+          "ing_id": ingId,
+          "status": newStatus,
+        }),
       );
 
       if (response.statusCode == 200) {
@@ -124,28 +135,50 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message, style: GoogleFonts.prompt()), backgroundColor: Colors.red),
+      SnackBar(
+        content: Text(message, style: GoogleFonts.prompt()),
+        backgroundColor: Colors.red,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    List<Map<String, dynamic>> filteredIngredients = myIngredients.where((item) {
-      return item['ing_name'].toString().toLowerCase().contains(searchQuery.toLowerCase());
+    List<Map<String, dynamic>> filteredIngredients = myIngredients.where((
+      item,
+    ) {
+      return item['ing_name'].toString().toLowerCase().contains(
+        searchQuery.toLowerCase(),
+      );
     }).toList();
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text("คลังวัตถุดิบของฉัน", style: GoogleFonts.prompt(color: const Color(0xFF0D47A1), fontWeight: FontWeight.bold)),
+        title: Text(
+          "คลังวัตถุดิบของฉัน",
+          style: GoogleFonts.prompt(
+            color: const Color(0xFF0D47A1),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_circle, color: Color(0xFF00ACC1), size: 30),
+            icon: const Icon(
+              Icons.add_circle,
+              color: Color(0xFF00ACC1),
+              size: 30,
+            ),
             onPressed: () async {
-              await Navigator.push(context, MaterialPageRoute(builder: (context) => const IngredientSearchScreen()));
-              _fetchInventory(); 
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const IngredientSearchScreen(),
+                ),
+              );
+              _fetchInventory();
             },
           ),
         ],
@@ -161,7 +194,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF1976D2)),
                 filled: true,
                 fillColor: Colors.grey[100],
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -178,13 +214,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             motion: const ScrollMotion(),
                             children: [
                               SlidableAction(
-                                onPressed: (_) => _toggleIngredient(index, item['ing_id'], item['amount']),
-                                backgroundColor: item['amount'] == 1 ? Colors.orange : Colors.green,
-                                icon: item['amount'] == 1 ? Icons.remove_circle : Icons.add_circle,
+                                onPressed: (_) => _toggleIngredient(
+                                  index,
+                                  item['ing_id'],
+                                  item['amount'],
+                                ),
+                                backgroundColor: item['amount'] == 1
+                                    ? Colors.orange
+                                    : Colors.green,
+                                icon: item['amount'] == 1
+                                    ? Icons.remove_circle
+                                    : Icons.add_circle,
                                 label: item['amount'] == 1 ? 'หมด' : 'มี',
                               ),
                               SlidableAction(
-                                onPressed: (_) => _deleteIngredient(index, item['ing_id']),
+                                onPressed: (_) =>
+                                    _deleteIngredient(index, item['ing_id']),
                                 backgroundColor: Colors.redAccent,
                                 icon: Icons.delete,
                                 label: 'ลบ',
@@ -208,18 +253,55 @@ class _InventoryScreenState extends State<InventoryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha: 0.15), blurRadius: 10, offset: const Offset(0, 3))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.15),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: ListTile(
+        // ✅ เพิ่มตรงนี้: กดที่การ์ดเพื่อไปหน้ารายละเอียด
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => IngredientDetailScreen(
+                ingredientId:
+                    item['ing_id'], // ส่งเฉพาะ ID (int) ตามที่หน้า Detail ต้องการ
+              ),
+            ),
+          );
+        },
         leading: Container(
-          width: 60, height: 60, padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: const Color(0xFFE0F7FA), borderRadius: BorderRadius.circular(12)),
-          child: CachedNetworkImage(imageUrl: item['ing_image'] ?? '', errorWidget: (_, __, ___) => const Icon(Icons.fastfood)),
+          width: 60,
+          height: 60,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE0F7FA),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: CachedNetworkImage(
+            imageUrl: item['ing_image'] ?? '',
+            errorWidget: (_, __, ___) => const Icon(Icons.fastfood),
+          ),
         ),
-        title: Text(item['ing_name'] ?? 'ไม่ทราบชื่อ', style: GoogleFonts.prompt(fontSize: 18, fontWeight: FontWeight.w500, color: const Color(0xFF0D47A1))),
+        title: Text(
+          item['ing_name'] ?? 'ไม่ทราบชื่อ',
+          style: GoogleFonts.prompt(
+            fontSize: 18,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF0D47A1),
+          ),
+        ),
         subtitle: Text(
           item['amount'] == 1 ? "สถานะ: มีวัตถุดิบ" : "สถานะ: หมด",
-          style: GoogleFonts.prompt(fontSize: 14, fontWeight: FontWeight.bold, color: item['amount'] == 1 ? Colors.green : Colors.grey),
+          style: GoogleFonts.prompt(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: item['amount'] == 1 ? Colors.green : Colors.grey,
+          ),
         ),
       ),
     );

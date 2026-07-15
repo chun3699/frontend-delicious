@@ -6,6 +6,7 @@ import 'package:flutter_application_1/service/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
+import '../detail/ingredient_detail_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -17,6 +18,7 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> {
   File? _image;
   String _predictionResult = "";
+  Map<String, dynamic>? _detectedIngredient;
   bool _isLoading = false;
   final ImagePicker _picker = ImagePicker();
 
@@ -27,11 +29,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
         maxWidth: 800,
         imageQuality: 85,
       );
-
       if (pickedFile != null) {
         setState(() {
           _image = File(pickedFile.path);
-          _predictionResult = "";
+          _predictionResult = "กำลังวิเคราะห์...";
+          _detectedIngredient = null;
         });
         _uploadImageToAI(_image!);
       }
@@ -50,40 +52,65 @@ class _ScannerScreenState extends State<ScannerScreen> {
       request.files.add(
         await http.MultipartFile.fromPath('file', imageFile.path),
       );
-
       var response = await request.send();
       var responseData = await response.stream.bytesToString();
 
       if (response.statusCode == 200) {
         var json = jsonDecode(responseData);
-        setState(() {
-          if (json['status'] == 'success') {
-            String ingredientName = json['ingredient'];
-            String capitalizedName =
-                "${ingredientName[0].toUpperCase()}${ingredientName.substring(1)}";
-            _predictionResult =
-                "นี่คือ: $capitalizedName\nความแม่นยำ: ${(json['confidence'] * 100).toStringAsFixed(2)}%";
+        if (json['status'] == 'success') {
+          String ingredientName = json['ingredient'];
+
+          // ✅ เพิ่มการเช็คว่าชื่อที่ได้มาจาก AI คือ "ไม่ทราบ" หรือไม่
+          if (ingredientName == "ไม่ทราบ") {
+            setState(() {
+              _predictionResult = "ไม่ทราบ"; // แสดงข้อความ "ไม่ทราบ" บนหน้าจอ
+              _detectedIngredient =
+                  null; // ล้างข้อมูลเก่าออก เพื่อไม่ให้ปุ่มต่างๆ แสดงขึ้นมา
+            });
           } else {
-            _predictionResult = "เซิร์ฟเวอร์ตอบกลับแต่สถานะไม่สำเร็จ";
+            // กรณีระบุชื่อได้ปกติ
+            setState(() => _predictionResult = "วิเคราะห์สำเร็จ");
+            await _fetchIngredientDetails(ingredientName);
           }
-        });
+        } else {
+          setState(() => _predictionResult = "ไม่สามารถระบุวัตถุดิบได้");
+          _detectedIngredient = null;
+        }
       } else {
         setState(
           () => _predictionResult =
               "ไม่สามารถวิเคราะห์ได้ (Error ${response.statusCode})",
         );
+        _detectedIngredient = null;
       }
     } catch (error) {
-      setState(
-        () =>
-            _predictionResult = "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ AI ได้\n$error",
-      );
+      setState(() => _predictionResult = "ไม่สามารถเชื่อมต่อ AI ได้");
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _addToInventory(int ingId, String ingName, int amount) async {
+  Future<void> _fetchIngredientDetails(String name) async {
+    final config = await Configuration.getConfig();
+    final token = await AuthService.getToken();
+    try {
+      final response = await http.get(
+        Uri.parse("${config['apiEndpoint']}/ingredient/search/name?name=$name"),
+        headers: {
+          "Authorization": "Bearer $token",
+          "Content-Type": "application/json",
+        },
+      );
+      if (response.statusCode == 200) {
+        setState(() => _detectedIngredient = jsonDecode(response.body));
+      }
+    } catch (e) {
+      debugPrint("Detail Error: $e");
+    }
+  }
+
+  // ปรับการเพิ่มคลัง: ส่งค่า amount เป็น 1 เสมอ
+  Future<void> _addToInventory(int ingId, String ingName) async {
     try {
       final String? uidStr = await AuthService.getUid();
       final String? token = await AuthService.getToken();
@@ -99,7 +126,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         body: jsonEncode({
           "uid": int.parse(uidStr!),
           "ing_id": ingId,
-          "amount": amount,
+          "amount": 1,
         }),
       );
 
@@ -108,7 +135,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'เพิ่ม $ingName จำนวน $amount เรียบร้อย!',
+              'เพิ่ม $ingName เข้าคลังเรียบร้อย!',
               style: GoogleFonts.prompt(),
             ),
             backgroundColor: Colors.green,
@@ -141,201 +168,101 @@ class _ScannerScreenState extends State<ScannerScreen> {
           "สแกนวัตถุดิบ",
           style: GoogleFonts.prompt(fontWeight: FontWeight.bold),
         ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
       ),
-      backgroundColor: Colors.grey[100],
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 300,
-                height: 300,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: _image != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Image.file(_image!, fit: BoxFit.cover),
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.image_search,
-                            size: 80,
-                            color: Colors.grey[400],
-                          ),
-                          Text(
-                            "ยังไม่ได้เลือกรูปภาพ",
-                            style: GoogleFonts.prompt(color: Colors.grey),
-                          ),
-                        ],
-                      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Container(
+              height: 300,
+              width: 300,
+              color: Colors.grey[200],
+              child: _image != null
+                  ? Image.file(_image!, fit: BoxFit.cover)
+                  : const Icon(Icons.camera_alt, size: 80),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                "⚠️ หมายเหตุ: AI อาจวิเคราะห์ผลลัพธ์ไม่ถูกต้อง โปรดตรวจสอบข้อมูลอีกครั้ง",
+                style: TextStyle(color: Colors.red, fontSize: 12),
               ),
-              const SizedBox(height: 30),
-              if (_isLoading)
-                const CircularProgressIndicator()
-              else if (_predictionResult.isNotEmpty &&
-                  !_predictionResult.contains("Error"))
-                Column(
+            ),
+
+            if (_isLoading) const CircularProgressIndicator(),
+
+            if (!_isLoading && _predictionResult.isNotEmpty) ...[
+              Text(
+                _predictionResult,
+                style: GoogleFonts.prompt(fontSize: 18, color: Colors.blue),
+              ),
+              if (_detectedIngredient != null) ...[
+                const SizedBox(height: 10),
+                // ✅ เพิ่ม: แสดงชื่อภาษาอังกฤษ (ing_name)
+                Text(
+                  "ชื่อ (ENG): ${_detectedIngredient!['ing_name'] ?? 'ไม่มีข้อมูล'}",
+                  style: GoogleFonts.prompt(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey,
+                  ),
+                ),
+                Text(
+                  "ชื่อไทย: ${_detectedIngredient!['ing_thai_name'] ?? 'ไม่มีข้อมูล'}",
+                  style: GoogleFonts.prompt(fontSize: 16),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(15),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: Colors.blue[200]!),
-                      ),
-                      child: Text(
-                        _predictionResult,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.prompt(
-                          fontSize: 18,
-                          color: Colors.blue[800],
-                          fontWeight: FontWeight.w600,
+                    ElevatedButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => IngredientDetailScreen(
+                            // ส่งเฉพาะค่า ID ที่เป็นตัวเลข (int) เข้าไปตามที่หน้า Detail ต้องการ
+                            ingredientId: _detectedIngredient!['ing_id'],
+                          ),
                         ),
                       ),
+                      child: Text("ดูรายละเอียด", style: GoogleFonts.prompt()),
                     ),
-                    const SizedBox(height: 15),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final String? token = await AuthService.getToken();
-                        // 1. สกัดชื่อและทำความสะอาดให้เหลือแต่ตัวอักษรภาษาอังกฤษ
-                        String rawName = _predictionResult
-                            .split(": ")[1]
-                            .split("\n")[0];
-                        String ingredientName = rawName
-                            .replaceAll(RegExp(r'[^a-zA-Z]'), '')
-                            .toLowerCase();
-
-                        print("DEBUG: กำลังค้นหาชื่อ '$ingredientName'");
-
-                        // 2. เรียก API เพื่อค้นหา ID
-                        final config = await Configuration.getConfig();
-                        // 2. ส่ง Header 'Authorization' ไปด้วยใน http.get
-                        final response = await http.get(
-                          Uri.parse(
-                            "${config['apiEndpoint']}/ingredient/search/name?name=$ingredientName",
-                          ),
-                          headers: {
-                            "Authorization":
-                                "Bearer $token", // <--- เพิ่มบรรทัดนี้
-                            "Content-Type": "application/json",
-                          },
-                        );
-
-                        print(
-                          "DEBUG: Response Status: ${response.statusCode}, Body: ${response.body}",
-                        );
-
-                        if (response.statusCode == 200) {
-                          final data = jsonDecode(response.body);
-                          int ingId = data['ing_id'];
-
-                          // 3. แสดง Dialog รับค่าจำนวน
-                          final TextEditingController ctrl =
-                              TextEditingController();
-                          String? amount = await showDialog<String>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: Text(
-                                "ระบุจำนวน",
-                                style: GoogleFonts.prompt(),
-                              ),
-                              content: TextField(
-                                controller: ctrl,
-                                keyboardType: TextInputType.number,
-                                autofocus: true,
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: Text("ยกเลิก"),
-                                ),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    final int? val = int.tryParse(ctrl.text);
-                                    // ตรวจสอบว่าต้องเป็นตัวเลข และต้องมากกว่า 0 เท่านั้น
-                                    if (val != null && val > 0) {
-                                      Navigator.pop(ctx, ctrl.text);
-                                    } else {
-                                      // ถ้ากรอกไม่ผ่าน ให้แสดง SnackBar เตือน
-                                      ScaffoldMessenger.of(ctx).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            "กรุณาระบุจำนวนมากกว่า 0",
-                                            style: GoogleFonts.prompt(),
-                                          ),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  },
-                                  child: Text("ตกลง"),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          // 4. ส่งไปบันทึกถ้าได้ค่าจำนวนแล้ว
-                          if (amount != null && amount.isNotEmpty) {
-                            await _addToInventory(
-                              ingId,
-                              ingredientName,
-                              int.parse(amount),
-                            );
-                          }
-                        } else {
-                          _showSnackBar(
-                            "ไม่พบวัตถุดิบ '$ingredientName' ในฐานข้อมูล",
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.add_shopping_cart),
-                      label: Text(
-                        "เพิ่มวัตถุดิบนี้เข้าคลัง",
-                        style: GoogleFonts.prompt(),
-                      ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00ACC1),
-                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.green,
+                      ),
+                      onPressed: () => _addToInventory(
+                        _detectedIngredient!['ing_id'],
+                        _detectedIngredient!['ing_name'],
+                      ),
+                      child: Text(
+                        "เพิ่มเข้าคลัง",
+                        style: GoogleFonts.prompt(color: Colors.white),
                       ),
                     ),
                   ],
                 ),
-              const SizedBox(height: 40),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => _pickImage(ImageSource.camera),
-                    icon: const Icon(Icons.camera_alt),
-                    label: Text("เปิดกล้อง", style: GoogleFonts.prompt()),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () => _pickImage(ImageSource.gallery),
-                    icon: const Icon(Icons.photo_library),
-                    label: Text("เลือกรูปภาพ", style: GoogleFonts.prompt()),
-                  ),
-                ],
-              ),
+              ],
             ],
-          ),
+
+            const SizedBox(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _pickImage(ImageSource.camera),
+                  icon: const Icon(Icons.camera_alt),
+                  label: Text("กล้อง", style: GoogleFonts.prompt()),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _pickImage(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library),
+                  label: Text("อัลบั้ม", style: GoogleFonts.prompt()),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

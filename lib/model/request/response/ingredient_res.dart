@@ -11,6 +11,7 @@ String ingredientResToJson(IngredientRes data) => json.encode(data.toJson());
 class IngredientRes {
     int ingId;
     String ingName;
+    String ingThaiName;
     String ingDetail;
     String ingImage;
     int ingTypeId;
@@ -19,6 +20,7 @@ class IngredientRes {
     IngredientRes({
         required this.ingId,
         required this.ingName,
+        required this.ingThaiName,
         required this.ingDetail,
         required this.ingImage,
         required this.ingTypeId,
@@ -28,6 +30,7 @@ class IngredientRes {
     factory IngredientRes.fromJson(Map<String, dynamic> json) => IngredientRes(
         ingId: json["ing_id"],
         ingName: json["ing_name"],
+        ingThaiName: json["ing_thai_name"],
         ingDetail: json["ing_detail"],
         ingImage: json["ing_image"],
         ingTypeId: json["ing_type_id"],
