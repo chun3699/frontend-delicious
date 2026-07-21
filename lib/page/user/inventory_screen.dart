@@ -63,6 +63,69 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  // 🛠️ 1. เพิ่มฟังก์ชันลบวัตถุดิบกลับเข้ามา
+  Future<void> _deleteIngredient(int index, int ingId) async {
+    try {
+      final String? uidStr = await AuthService.getUid();
+      final String? token = await AuthService.getToken();
+      if (uidStr == null || token == null) return;
+
+      final config = await Configuration.getConfig();
+      final apiEndpoint = config['apiEndpoint'];
+
+      final response = await http.delete(
+        Uri.parse("$apiEndpoint/uability/remove-inventory"),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
+        body: jsonEncode({"uid": int.parse(uidStr), "ing_id": ingId}),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() => myIngredients.removeAt(index));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ลบวัตถุดิบเรียบร้อยแล้ว')),
+        );
+      }
+    } catch (e) {
+      debugPrint("❌ Error deleting: $e");
+    }
+  }
+
+  // 🛠️ 2. เพิ่มฟังก์ชันสลับสถานะ (มี/หมด) กลับเข้ามา
+  Future<void> _toggleIngredient(int index, int ingId, int currentStatus) async {
+    try {
+      final String? uidStr = await AuthService.getUid();
+      final String? token = await AuthService.getToken();
+      final config = await Configuration.getConfig();
+      final apiEndpoint = config['apiEndpoint'];
+
+      int newStatus = currentStatus == 1 ? 0 : 1;
+
+      final response = await http.put(
+        Uri.parse("$apiEndpoint/uability/toggle-inventory"),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
+        body: jsonEncode({
+          "uid": int.parse(uidStr!),
+          "ing_id": ingId,
+          "status": newStatus,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          myIngredients[index]['amount'] = newStatus;
+        });
+      }
+    } catch (e) {
+      debugPrint("❌ Toggle Error: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     List<Map<String, dynamic>> filteredIngredients = myIngredients.where((item) {
@@ -123,7 +186,35 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     itemCount: filteredIngredients.length,
                     itemBuilder: (context, index) {
                       final item = filteredIngredients[index];
-                      return _buildIngredientCard(item);
+                      
+                      // 🛠️ 3. ครอบด้วย Slidable เพื่อให้สามารถเลื่อนซ้ายเพื่อกดปุ่มสลับสถานะหรือลบได้
+                      return Slidable(
+                        key: ValueKey(item['ing_id']),
+                        endActionPane: ActionPane(
+                          motion: const ScrollMotion(),
+                          children: [
+                            SlidableAction(
+                              onPressed: (_) => _toggleIngredient(
+                                index,
+                                item['ing_id'],
+                                item['amount'],
+                              ),
+                              backgroundColor: item['amount'] == 1 ? Colors.orange : Colors.green,
+                              foregroundColor: Colors.white,
+                              icon: item['amount'] == 1 ? Icons.remove_circle : Icons.add_circle,
+                              label: item['amount'] == 1 ? 'หมด' : 'มี',
+                            ),
+                            SlidableAction(
+                              onPressed: (_) => _deleteIngredient(index, item['ing_id']),
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              icon: Icons.delete,
+                              label: 'ลบ',
+                            ),
+                          ],
+                        ),
+                        child: _buildIngredientCard(item),
+                      );
                     },
                   ),
           ),
