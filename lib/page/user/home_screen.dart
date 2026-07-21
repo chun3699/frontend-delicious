@@ -23,61 +23,61 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> myIngredients = [];
   bool _isLoading = true;
 
+  String userName = "ผู้ใช้งาน";
+  String profileUrl = "";
+
   @override
   void initState() {
     super.initState();
     _loadAllData();
   }
 
-  // เพิ่มตัวแปรเหล่านี้ใน _HomeScreenState
-String userName = "ผู้ใช้งาน";
-String profileUrl = "";
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
+    try {
+      final name = await AuthService.getName();
+      final profile = await AuthService.getProfile();
+      
+      final String? token = await AuthService.getToken();
+      final String? uid = await AuthService.getUid();
+      final config = await Configuration.getConfig();
+      final api = config['apiEndpoint'];
 
-// ปรับปรุง _loadAllData
-Future<void> _loadAllData() async {
-  setState(() => _isLoading = true);
-  try {
-    // 1. ดึงข้อมูลผู้ใช้จาก AuthService
-    final name = await AuthService.getName();
-    final profile = await AuthService.getProfile();
-    
-    // 2. ดึง Token และ Config
-    final String? token = await AuthService.getToken();
-    final String? uid = await AuthService.getUid();
-    final config = await Configuration.getConfig();
-    final api = config['apiEndpoint'];
+      // 1. ดึงคลังวัตถุดิบ
+      final invRes = await http.get(Uri.parse("$api/uability/inventory/$uid"), headers: {"Authorization": "Bearer $token"});
+      List<int> invIds = [];
+      if (invRes.statusCode == 200) {
+        final invData = jsonDecode(invRes.body)['data'] as List;
+        setState(() => myIngredients = List<Map<String, dynamic>>.from(invData));
 
-    // 3. ดึงคลังวัตถุดิบ (คงเดิม)
-    final invRes = await http.get(Uri.parse("$api/uability/inventory/$uid"), headers: {"Authorization": "Bearer $token"});
-    List<int> invIds = [];
-    if (invRes.statusCode == 200) {
-      final invData = jsonDecode(invRes.body)['data'] as List;
-      invIds = invData.map<int>((i) => i['ing_id'] as int).toList();
-      setState(() => myIngredients = List<Map<String, dynamic>>.from(invData));
+        // ⭐️ กรองเฉพาะวัตถุดิบที่มีสถานะ amount == 1 (มี) เท่านั้น ถึงจะเอา ID ไปส่งคำนวณเมนูแนะนำ
+        invIds = invData
+            .where((i) => i['amount'] == 1)
+            .map<int>((i) => i['ing_id'] as int)
+            .toList();
+      }
+
+      // 2. ส่ง ID วัตถุดิบที่มีสถานะ "มี" ไปดึงรายการแนะนำ
+      final recRes = await http.post(
+        Uri.parse("$api/food/recommend"),
+        headers: {"Authorization": "Bearer $token", "Content-Type": "application/json"},
+        body: jsonEncode({"userInventoryIds": invIds}),
+      );
+
+      if (recRes.statusCode == 200) {
+        setState(() => recommendFoods = List<Map<String, dynamic>>.from(jsonDecode(recRes.body)['data']));
+      }
+
+      setState(() {
+        userName = name ?? "ผู้ใช้งาน";
+        profileUrl = profile ?? "";
+      });
+    } catch (e) {
+      debugPrint("Error loading home data: $e");
+    } finally {
+      setState(() => _isLoading = false);
     }
-
-    // 4. ดึงรายการแนะนำ (คงเดิม)
-    final recRes = await http.post(
-      Uri.parse("$api/food/recommend"),
-      headers: {"Authorization": "Bearer $token", "Content-Type": "application/json"},
-      body: jsonEncode({"userInventoryIds": invIds}),
-    );
-
-    if (recRes.statusCode == 200) {
-      setState(() => recommendFoods = List<Map<String, dynamic>>.from(jsonDecode(recRes.body)['data']));
-    }
-
-    // อัปเดต State ข้อมูลผู้ใช้
-    setState(() {
-      userName = name ?? "ผู้ใช้งาน";
-      profileUrl = profile ?? "";
-    });
-  } catch (e) {
-    debugPrint("Error loading home data: $e");
-  } finally {
-    setState(() => _isLoading = false);
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -128,28 +128,28 @@ Future<void> _loadAllData() async {
   }
 
   Widget _buildHeader() {
-  return Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      Expanded(
-        child: Text(
-          "สวัสดี, $userName 👋", 
-          style: GoogleFonts.prompt(fontSize: 22, fontWeight: FontWeight.bold, color: const Color(0xFF0D47A1)),
-          overflow: TextOverflow.ellipsis,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            "สวัสดี, $userName 👋", 
+            style: GoogleFonts.prompt(fontSize: 22, fontWeight: FontWeight.bold, color: const Color(0xFF0D47A1)),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
-      const SizedBox(width: 10),
-      CircleAvatar(
-        radius: 22,
-        backgroundColor: Colors.grey[200],
-        backgroundImage: profileUrl.isNotEmpty 
-            ? CachedNetworkImageProvider(profileUrl) 
-            : null,
-        child: profileUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey) : null,
-      ),
-    ],
-  );
-}
+        const SizedBox(width: 10),
+        CircleAvatar(
+          radius: 22,
+          backgroundColor: Colors.grey[200],
+          backgroundImage: profileUrl.isNotEmpty 
+              ? CachedNetworkImageProvider(profileUrl) 
+              : null,
+          child: profileUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey) : null,
+        ),
+      ],
+    );
+  }
 
   Widget _buildQuickSearchButton(BuildContext context, String label, IconData icon, Color color, Widget destination) {
     return Expanded(
@@ -197,13 +197,12 @@ Future<void> _loadAllData() async {
       items: recommendFoods.map((food) {
         return GestureDetector(
           onTap: () async {
-            // ดึงข้อมูลรายละเอียดเมนูเพื่อส่งไปหน้า Detail
             final config = await Configuration.getConfig();
             final token = await AuthService.getToken();
             final api = config['apiEndpoint'];
             
             final res = await http.get(
-              Uri.parse("$api/food/${food['recipeId']}"), // ใช้ recipeId จาก API แนะนำ
+              Uri.parse("$api/food/${food['recipeId']}"),
               headers: {"Authorization": "Bearer $token"}
             );
             
@@ -211,14 +210,13 @@ Future<void> _loadAllData() async {
               Navigator.push(context, MaterialPageRoute(builder: (context) => 
                 FoodDetailScreen(
                   foodData: jsonDecode(res.body), 
-                  myInventory: myIngredients // ส่งคลังไปด้วยเพื่อให้เช็ควัตถุดิบได้
+                  myInventory: myIngredients
                 )
               ));
             }
           },
           child: Stack(
             children: [
-              // รูปภาพเมนูอาหาร
               ClipRRect(
                 borderRadius: BorderRadius.circular(15),
                 child: CachedNetworkImage(
@@ -229,7 +227,6 @@ Future<void> _loadAllData() async {
                   errorWidget: (context, url, error) => Container(color: Colors.grey[300], child: const Icon(Icons.restaurant)),
                 ),
               ),
-              // เงาดำให้ข้อความอ่านง่าย
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(15),
@@ -240,16 +237,29 @@ Future<void> _loadAllData() async {
                   )
                 ),
               ),
-              // ชื่อเมนู
               Positioned(
                 bottom: 15,
                 left: 15,
                 right: 15,
-                child: Text(
-                  food['recipeName'], 
-                  style: GoogleFonts.prompt(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      food['recipeName'], 
+                      style: GoogleFonts.prompt(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "ความพร้อม: ${food['matchPercentage']}%", 
+                      style: GoogleFonts.prompt(
+                        color: food['canCookNow'] ? Colors.greenAccent : Colors.orangeAccent, 
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -303,7 +313,6 @@ Future<void> _loadAllData() async {
       margin: const EdgeInsets.only(right: 15),
       child: Column(
         children: [
-          // ⭐️ ปรับจาก CircleAvatar ที่มีไอคอน เป็นการใช้ ClipRRect แสดงรูปภาพ
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: CachedNetworkImage(
@@ -320,7 +329,6 @@ Future<void> _loadAllData() async {
             ),
           ),
           const SizedBox(height: 5),
-          // ชื่อวัตถุดิบ
           Text(
             item['ing_name'] ?? "",
             style: GoogleFonts.prompt(fontSize: 12),

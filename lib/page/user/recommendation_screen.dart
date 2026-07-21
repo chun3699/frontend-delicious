@@ -38,17 +38,27 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         Uri.parse("$apiEndpoint/uability/inventory/$uid"),
         headers: {"Authorization": "Bearer $token"},
       );
-      
+
       if (invRes.statusCode == 200) {
         final List inventoryData = jsonDecode(invRes.body)['data'];
-        setState(() => myInventory = List<Map<String, dynamic>>.from(inventoryData));
 
-        // 2. ส่ง ID วัตถุดิบไปให้ API แนะนำอาหาร
-        List<int> invIds = inventoryData.map<int>((i) => i['ing_id'] as int).toList();
-        
+        setState(
+          () => myInventory = List<Map<String, dynamic>>.from(inventoryData),
+        );
+
+        // ⭐️ กรองเอาเฉพาะวัตถุดิบที่ amount == 1 (สถานะ "มี") เท่านั้น ถึงจะเอา ID ไปคำนวณเมนูแนะนำ
+        List<int> invIds = inventoryData
+            .where((i) => i['amount'] == 1) // 👈 กรองตัวที่หมด (0) ออกไปทันที
+            .map<int>((i) => i['ing_id'] as int)
+            .toList();
+
+        // จากนั้นค่อยส่ง invIds นี้ไปที่ API /recommend ต่อไป...
         final recRes = await http.post(
           Uri.parse("$apiEndpoint/food/recommend"),
-          headers: {"Authorization": "Bearer $token", "Content-Type": "application/json"},
+          headers: {
+            "Authorization": "Bearer $token",
+            "Content-Type": "application/json",
+          },
           body: jsonEncode({"userInventoryIds": invIds}),
         );
 
@@ -77,54 +87,109 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           icon: const Icon(Icons.arrow_back_ios, color: Color(0xFF0D47A1)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text("เมนูที่ทำได้จากวัตถุดิบของคุณ", style: GoogleFonts.prompt(color: const Color(0xFF0D47A1), fontWeight: FontWeight.bold, fontSize: 18)),
+        title: Text(
+          "เมนูที่ทำได้จากวัตถุดิบของคุณ",
+          style: GoogleFonts.prompt(
+            color: const Color(0xFF0D47A1),
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : recommendedList.isEmpty
-            ? Center(child: Text("ยังไม่มีเมนูที่ทำได้ตอนนี้", style: GoogleFonts.prompt(color: Colors.grey)))
-            : ListView.builder(
-                padding: const EdgeInsets.all(20),
-                itemCount: recommendedList.length,
-                itemBuilder: (context, index) {
-                  final food = recommendedList[index];
-                  return GestureDetector(
-                    onTap: () async {
-                      // ดึงข้อมูลรายละเอียดเมนูเพื่อส่งไปหน้า Detail
-                      final config = await Configuration.getConfig();
-                      final token = await AuthService.getToken();
-                      final res = await http.get(Uri.parse("${config['apiEndpoint']}/food/${food['recipeId']}"),
-                          headers: {"Authorization": "Bearer $token"});
-                      
-                      if (res.statusCode == 200) {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => 
-                          FoodDetailScreen(foodData: jsonDecode(res.body), myInventory: myInventory)));
-                      }
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10)]),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                            child: CachedNetworkImage(imageUrl: food['food_image'] ?? "", height: 180, width: double.infinity, fit: BoxFit.cover)),
-                          Padding(padding: const EdgeInsets.all(15), child: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : recommendedList.isEmpty
+          ? Center(
+              child: Text(
+                "ยังไม่มีเมนูที่ทำได้ตอนนี้",
+                style: GoogleFonts.prompt(color: Colors.grey),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(20),
+              itemCount: recommendedList.length,
+              itemBuilder: (context, index) {
+                final food = recommendedList[index];
+                return GestureDetector(
+                  onTap: () async {
+                    // ดึงข้อมูลรายละเอียดเมนูเพื่อส่งไปหน้า Detail
+                    final config = await Configuration.getConfig();
+                    final token = await AuthService.getToken();
+                    final res = await http.get(
+                      Uri.parse(
+                        "${config['apiEndpoint']}/food/${food['recipeId']}",
+                      ),
+                      headers: {"Authorization": "Bearer $token"},
+                    );
+
+                    if (res.statusCode == 200) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => FoodDetailScreen(
+                            foodData: jsonDecode(res.body),
+                            myInventory: myInventory,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(15),
+                          ),
+                          child: CachedNetworkImage(
+                            imageUrl: food['food_image'] ?? "",
+                            height: 180,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(food['recipeName'], style: GoogleFonts.prompt(fontSize: 18, fontWeight: FontWeight.bold)),
-                              Text("ความพร้อม: ${food['matchPercentage']}%", style: GoogleFonts.prompt(
-                                color: food['canCookNow'] ? Colors.green : Colors.orange,
-                                fontWeight: FontWeight.bold
-                              )),
+                              Text(
+                                food['recipeName'],
+                                style: GoogleFonts.prompt(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                "ความพร้อม: ${food['matchPercentage']}%",
+                                style: GoogleFonts.prompt(
+                                  color: food['canCookNow']
+                                      ? Colors.green
+                                      : Colors.orange,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ],
-                          )),
-                        ],
-                      ),
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
